@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CNN-LSTM-Attention 股价预测系统</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+    <style>
+        body { font-family: 'Microsoft YaHei', sans-serif; background-color: #f0f2f5; margin: 0; padding: 20px; }
+        .header { text-align: center; margin-bottom: 30px; }
+        .header h1 { color: #2c3e50; }
+        .control-panel { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 12px 0 rgba(0,0,0,0.1); margin-bottom: 20px; display: flex; justify-content: center; align-items: center; gap: 15px; }
+        input { padding: 10px; font-size: 16px; border: 1px solid #dcdfe6; border-radius: 4px; width: 200px; }
+        button { padding: 10px 20px; font-size: 16px; background-color: #409eff; color: white; border: none; border-radius: 4px; cursor: pointer; transition: 0.3s; }
+        button:hover { background-color: #66b1ff; }
+        button:disabled { background-color: #a0cfff; cursor: not-allowed; }
+        #chart-container { background: white; border-radius: 8px; box-shadow: 0 2px 12px 0 rgba(0,0,0,0.1); padding: 20px; height: 500px; }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <div class="header">
+            <h1>📈 深度学习股价预测系统 (CNN-LSTM-Attention)</h1>
+        </div>
+
+        <div class="control-panel">
+            <label>请输入股票代码：</label>
+            <input type="text" v-model="stockCode" placeholder="例如：600519">
+            <button @click="startPrediction" :disabled="loading">
+                <span v-if="loading">模型计算中...</span>
+                <span v-else>开始预测</span>
+            </button>
+        </div>
+
+        <div id="chart-container"></div>
+    </div>
+
+    <script>
+        const { createApp, ref, onMounted } = Vue;
+
+        createApp({
+            setup() {
+                const stockCode = ref('600519'); 
+                const loading = ref(false);
+                let myChart = null;
+
+                onMounted(() => {
+                    myChart = echarts.init(document.getElementById('chart-container'));
+                    myChart.setOption({
+                        title: { text: '等待数据输入...', left: 'center', textStyle: { color: '#909399' } },
+                        xAxis: { type: 'category', data: [] },
+                        yAxis: { type: 'value' },
+                        series: []
+                    });
+                });
+
+                const startPrediction = () => {
+                    if (!stockCode.value) {
+                        alert("股票代码不能为空！");
+                        return;
+                    }
+                    loading.value = true;
+                    myChart.showLoading(); 
+
+                    // 动态发送股票代码给 Flask 后端
+                    fetch(`/api/predict?code=${stockCode.value}`)
+                        .then(response => response.json())
+                        .then(data => {
+                            if(data.status === 'success') {
+                                myChart.hideLoading();
+                                myChart.setOption({
+                                    title: { text: `股票 ${stockCode.value} 真实深度学习预测结果`, left: 'center', textStyle: { color: '#333' } },
+                                    tooltip: { trigger: 'axis' },
+                                    legend: { data: ['真实收盘价', 'AI预测价'], bottom: 0 },
+                                    
+                                    // ================= 终极美化版坐标轴 =================
+                                    xAxis: { 
+                                        type: 'category', 
+                                        data: data.dates,
+                                        axisLabel: { rotate: 45 } // 日期倾斜 45 度，防止重叠
+                                    },
+                                    yAxis: { 
+                                        type: 'value', 
+                                        min: 'dataMin',
+                                        name: '股价 (人民币/元)',         // Y 轴标题
+                                        axisLabel: { formatter: '¥ {value}' } // Y 轴数字带上人民币符号
+                                    },
+                                    // ====================================================
+
+                                    series: [
+                                        { name: '真实收盘价', type: 'line', data: data.real_prices, smooth: true, lineStyle: { width: 2, color: '#1f77b4' } },
+                                        { name: 'AI预测价', type: 'line', data: data.predicted_prices, smooth: true, lineStyle: { type: 'dashed', width: 2, color: '#d62728' } }
+                                    ]
+                                });
+                            } else {
+                                alert("预测失败：" + data.message);
+                                myChart.hideLoading();
+                            }
+                        })
+                        .catch(error => {
+                            console.error("网络请求错误:", error);
+                            alert("服务器连接断开，请检查终端 Flask 是否在运行！");
+                            myChart.hideLoading();
+                        })
+                        .finally(() => {
+                            loading.value = false;
+                        });
+                };
+
+                return { stockCode, loading, startPrediction };
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
